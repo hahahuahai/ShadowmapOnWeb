@@ -1,0 +1,262 @@
+<html>
+
+<head>
+    <script type="text/javascript" src="script/gl-matrix-min.js"></script>
+    <script type="text/javascript" src="script/data.js"></script>
+
+
+
+</head>
+
+<body>
+    <canvas id="myCanvas" width="1200" height="675" style="border:1px solid #d3d3d3;">
+        Your browser does not support the HTML5 canvas tag.
+    </canvas>
+
+    <script type="text/javascript">
+
+        var WinCoordinate = {
+            winX: 0,
+            winY: 0,
+            winZ: 0.0
+        };
+        //主视点图上面的屏幕坐标
+        var WinCoordinate_mainview = {
+            winX: 0,
+            winY: 0,
+            winZ: 0.0
+        };
+        //摄像机图上面的屏幕坐标
+        var WinCoordinate_camera = {
+            winX: 0,
+            winY: 0,
+            winZ: 0.0
+        };
+        // var winX = 0;
+        // var winY = 675;
+        // var winZ = 0.95095;
+        var colorRGB = {
+            r: 0,
+            g: 0,
+            b: 0
+        };
+
+        var ObjectCoordinate = {
+            objX: 0.0,
+            objY: 0.0,
+            objZ: 0.0
+        };
+
+        // var objX = 0.027241569708763368;
+        // var objY = 2.3284265988583157;
+        // var objZ = 1.0000011909000945;
+
+        var modelviewMatrix_mainview = mat4.fromValues(1.0, 0.0, 0.0, 0.0,
+            0.0, 1.0, 0.0, 0.0,
+            0.0, 0.0, 1.0, 0.0,
+            -1.5, -1.5, -3.0, 1.0);
+        var projectMatrix_mainview = mat4.fromValues(1.3579951524734497, 0.0, 0.0, 0.0,
+            0.0, 2.4142136573791504, 0.0, 0.0,
+            0.0, 0.0, -1.0020020008087158, -1.0,
+            0.0, 0.0, -0.20020020008087158, 0.0);
+        var viewport_mainview = vec4.fromValues(0, 0, 1200, 675);
+
+        var modelviewMatrix_camera = mat4.fromValues(1.0, 0.0, 0.0, 0.0,
+            0.0, 1.0, 0.0, 0.0,
+            0.0, 0.0, 1.0, 0.0,
+            -1.5, -1.2, -3.0, 1.0);
+        var projectMatrix_camera = mat4.fromValues(1.3579951524734497, 0.0, 0.0, 0.0,
+            0.0, 2.4142136573791504, 0.0, 0.0,
+            0.0, 0.0, -1.0020020008087158, -1.0,
+            0.0, 0.0, -0.20020020008087158, 0.0);
+        var viewport_camera = vec4.fromValues(0, 0, 1200, 675);
+
+
+        // var modelMatrix = mat4.create();
+        // var viewMatrix = mat4.create();
+        // mat4.lookAt(viewMatrix, vec3.fromValues(4, 3, -3), vec3.fromValues(0, 0, 0), vec3.fromValues(0, 1, 0));
+        // var modelviewMatrix = mat4.create();
+        // mat4.multiply(modelviewMatrix, modelMatrix, viewMatrix);
+        // var projectMatrix = mat4.create();
+        // mat4.perspective(projectMatrix, glMatrix.toRadian(45.0), 4.0 / 3.0, 0.1, 100.0)
+
+
+        function decomposeRGB(input, colorRGB) {
+            colorRGB.r = (input >> 16) & 0xff;
+            colorRGB.g = (input >> 8) & 0xff;
+            colorRGB.b = input & 0xff;
+            return colorRGB;
+        }
+
+
+        //将世界坐标转换为屏幕坐标。
+        function project(ObjectCoordinate, modelviewMatrix, projectMatrix, viewport, WinCoordinate) {
+            var input = new Array(4);
+            var output = new Array(4);
+            var modelviewproj_matrix = mat4.create();
+
+            input[0] = ObjectCoordinate.objX;
+            input[1] = ObjectCoordinate.objY;
+            input[2] = ObjectCoordinate.objZ;
+            input[3] = 1.0;
+
+
+            // mat4.multiply(modelviewproj_matrix, modelviewMatrix, projectMatrix);
+            // vec4.transformMat4(input, input, modelviewproj_matrix);
+
+            vec4.transformMat4(output, input, modelviewMatrix);//模型视图变换
+            vec4.transformMat4(input, output, projectMatrix);//投影变换
+
+            //透视除法，进入标准化设备坐标
+            if (input[3] == 0.0) return;
+            input[0] /= input[3];
+            input[1] /= input[3];
+            input[2] /= input[3];
+
+            //将坐标由-1到1，转换到0-1
+            input[0] = input[0] * 0.5 + 0.5;
+            input[1] = input[1] * 0.5 + 0.5;
+            input[2] = input[2] * 0.5 + 0.5;
+
+            //将x,y转换到屏幕坐标
+            input[0] = input[0] * viewport[2] + viewport[0];
+            input[1] = input[1] * viewport[3] + viewport[1];
+
+            WinCoordinate.winX = input[0];
+            WinCoordinate.winY = input[1];
+            WinCoordinate.winZ = input[2];
+
+            return WinCoordinate;
+        }
+
+        //将屏幕坐标转换为世界坐标。
+        function Unproject(WinCoordinate, modelviewMatrix, projectMatrix, viewport, ObjectCoordinate) {
+            var finalMatrix = mat4.create();
+            var modelviewMatrix_invert = mat4.create();
+            var projectMatrix_invert = mat4.create();
+            var input = new Array(4);
+            var output = new Array(4);
+
+            mat4.invert(modelviewMatrix_invert, modelviewMatrix);
+            mat4.invert(projectMatrix_invert, projectMatrix);
+            //合并MVP矩阵
+            mat4.multiply(finalMatrix, modelviewMatrix_invert, projectMatrix_invert);
+
+            input[0] = WinCoordinate.winX;
+            input[1] = viewport[3] - WinCoordinate.winY;
+            input[2] = WinCoordinate.winZ;
+            input[3] = 1.0;
+
+            //从屏幕坐标变换为0到1之间的坐标
+            input[0] = (input[0] - viewport[0]) / viewport[2];
+            input[1] = (input[1] - viewport[1]) / viewport[3];
+
+            //从0到1之间变换到-1到1之间
+            input[0] = input[0] * 2 - 1;
+            input[1] = input[1] * 2 - 1;
+            input[2] = input[2] * 2 - 1;
+
+            //乘以MVP逆矩阵之后得到世界空间的坐标
+            vec4.transformMat4(output, input, finalMatrix);
+            //从齐次坐标变换为笛卡尔坐标
+            if (output[3] == 0.0) return;
+            output[0] /= output[3];
+            output[1] /= output[3];
+            output[2] /= output[3];
+
+            //将结果赋值。
+            ObjectCoordinate.objX = output[0];
+            ObjectCoordinate.objY = output[1];
+            ObjectCoordinate.objZ = output[2];
+
+            return ObjectCoordinate;
+        }
+
+
+
+        function getPixels(WindowWidth, WindowHeight) {
+            var t1 = 0, t2 = 0, t3 = 0;
+            for (var i = 0; i < WindowWidth * WindowHeight; i++) {
+                //根据一维数组中的位置，转换成主视图屏幕上的X,Y坐标。
+                var int_iWindowWidth = parseInt(i / WindowWidth) * WindowWidth;
+                WinCoordinate_mainview.winX = i - int_iWindowWidth;
+                WinCoordinate_mainview.winY = parseInt(i / WindowWidth);
+                //从存储主视图屏幕深度信息的一维数组中取出对应的深度，即Z坐标。
+                WinCoordinate_mainview.winZ = depthdata_mainview[i];
+                //从主视图屏幕的XYZ坐标反算到局部坐标  
+                ObjectCoordinate = Unproject(WinCoordinate_mainview, modelviewMatrix_mainview, projectMatrix_mainview, viewport_mainview, ObjectCoordinate);
+                //再从局部坐标正算到摄像机的屏幕坐标，这样就得到了主视图屏幕上一点在摄像机的屏幕坐标和深度。
+                WinCoordinate_camera = project(ObjectCoordinate, modelviewMatrix_camera, projectMatrix_camera, viewport_camera, WinCoordinate_camera);
+                //WinCoordinate_camera = project(ObjectCoordinate, modelviewMatrix_mainview, projectMatrix_mainview, viewport_mainview, WinCoordinate_camera);
+                //对屏幕坐标进行取整，因为像素坐标只能是整数
+                WinCoordinate_camera.winX = parseInt(WinCoordinate_camera.winX);
+                WinCoordinate_camera.winY = WindowHeight - parseInt(WinCoordinate_camera.winY);//因为project得到的winY是opengl坐标。
+
+                if (WinCoordinate_camera.winY > 0) {
+                    //将得到的摄像机屏幕坐标XY转换成一维数组中的位置
+                    var depthdata_one_location_camera = WinCoordinate_camera.winY * WindowWidth + WinCoordinate_camera.winX;
+                    //取出摄像机深度图里面对应像素的深度
+                    var depthdata_one_camera = depthdata_camera[depthdata_one_location_camera];
+                    //正算得到的深度与摄像机深度图对应像素的深度进行比较：若等于，则未被遮挡；若大于，则被遮挡。
+                    if (Math.abs(WinCoordinate_camera.winZ - depthdata_one_camera) < 0.0000001) {
+                        //取摄像机视频图相应像素的RGB值，然后替换主视点相应像素的RGB值。目前是假设摄像机RGB图和深度图是同样的屏幕宽高，如果以后不一样要另算。
+                        // var t = colordata_mainview[i];
+                        colordata_mainview[i] = colordata_camera[depthdata_one_location_camera];
+                        // if (t != colordata_mainview[i])
+                        //     alert("主视点原来值：" + t + "    " + "主视点修改之后的值：" + colordata_mainview[i]);
+                        t1++;
+                    }
+                    else if (WinCoordinate_camera.winZ > depthdata_one_camera) {
+                        t2++;
+                    }
+                    else {
+                        t3++;
+                    }
+                }
+
+            }
+            alert("深度相等的像素个数：" + t1);
+            alert("深度大于的像素个数：" + t2);
+            alert("深度小于的像素个数：" + t3);
+        }
+
+
+        //在canvas上绘制结果
+        function draw(WindowWidth, WindowHeight) {
+            var mycanvas = document.getElementById("myCanvas");
+            var ctx = mycanvas.getContext("2d");
+            // ctx.fillStyle = "rgb(200,200,0)";
+            // ctx.fillRect(2, 2, 100, 100);
+
+            for (var i = 0; i < WindowWidth * WindowHeight; i++) {
+                colorRGB = decomposeRGB(colordata_mainview[i], colorRGB);
+                ctx.fillStyle = "rgb(" + colorRGB.r + "," + colorRGB.g + "," + colorRGB.b + ")";
+                var int_iWindowWidth = parseInt(i / WindowWidth) * WindowWidth;
+                x = i - int_iWindowWidth;
+                y = WindowHeight - parseInt(i / WindowWidth);
+                ctx.fillRect(x, y, 1, 1);
+            }
+        }
+
+
+        function init() {
+            getPixels(1200, 675);
+            //var input = 8323327;
+            //ObjectCoordinate = Unproject(WinCoordinate, modelviewMatrix, projectMatrix, viewport, ObjectCoordinate);
+            //WinCoordinate = project(ObjectCoordinate, modelviewMatrix, projectMatrix, viewport, WinCoordinate);
+            //colorRGB = decomposeRGB(input, colorRGB);
+            //alert(colorRGB.r);
+            draw(1200, 675);
+        }
+        window.onload = init();
+    </script>
+
+    <script>        
+
+    </script>
+
+
+
+</body>
+
+</html>
